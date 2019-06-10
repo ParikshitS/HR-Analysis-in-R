@@ -1,0 +1,235 @@
+---
+title: "HR Analytics"
+output:
+  html_document:
+    df_print: paged
+---
+#Identifying the best recruiting source
+```{r}
+# Load the readr package
+library(readr)
+
+# Import the recruitment data
+recruitment <- read_csv("recruitment_data.csv")
+
+# Look at the first few rows of the dataset
+head(recruitment)
+```
+
+```{r}
+# Load the dplyr package
+library(dplyr)
+
+# Get an overview of the recruitment data
+summary(recruitment)
+
+# See which recruiting sources the company has been using
+count(recruitment, recruiting_source)
+```
+Which recruiting channel produces the best salespeople? One quality of hire metric you can use is sales quota attainment, or how much a salesperson sold last year relative to their quota. An employee whose sales_quota_pct equals .75 sold 75% of their quota, for example. This metric can be helpful because raw sales numbers are not always comparable between employees.
+
+We will Calculate the average sales quota attainment achieved by hires from each recruiting source.
+```{r}
+# Find the average sales quota attainment 
+recruitment %>%
+  summarize(avg_sales_quota_pct = mean(sales_quota_pct, na.rm = TRUE))
+
+```
+Use summarize() to calculate the average sales quota attainment within each recruiting source. Store it in a new column called avg_sales_quota_pct. Assign the result to avg_sales.
+
+```{r}
+# Find the average sales quota attainment for each recruiting source
+avg_sales <- recruitment %>%
+      group_by(recruiting_source) %>%
+  summarize(avg_sales_quota_pct = mean(sales_quota_pct, na.rm = TRUE))
+
+# Display the result
+avg_sales
+```
+Another quality of hire metric you can consider is the attrition rate, or how often hires leave the company. Determine which recruiting channels have the highest and lowest attrition rates.
+```{r}
+# Find the average attrition for the sales team, by recruiting source, sorted from lowest attrition rate to highest
+avg_attrition <- recruitment %>%
+  group_by(recruiting_source) %>% 
+  summarize(attrition_rate = mean(attrition, na.rm = TRUE))%>% 
+  arrange(avg_attrition = attrition_rate)
+
+# Display the result
+avg_attrition
+```
+```{r}
+# Load the ggplot2 package
+library(ggplot2)
+
+# Plot the bar chart
+ggplot(avg_sales, aes(x=recruiting_source, y=avg_sales_quota_pct)) + geom_col()
+
+```
+
+Attrition Rates. Bar chart of avergae attrition
+```{r}
+ggplot(avg_attrition, aes(x=recruiting_source, y=attrition_rate)) + geom_col()
+```
+Conclusion: You cannnot say NA is best, as NA indicates the hiring source is missing. The best source is Applied Online and the worst source is Search Firm.
+
+
+#What is driving low employee engagement?
+```{r}
+survey <- read_csv("survey_data.csv")
+summary(survey)
+#Use count() on the department variable, since summary() doesn't provide much information about character variables.
+count(survey, department)
+```
+###Which department has the lowest engagement?
+```{r}
+survey %>%
+  group_by(department) %>%
+  summarize(avg_engagement = mean(engagement)) %>%
+  arrange(avg_engagement)
+```
+
+Another common way to think about engagement is identifying which employees are disengaged, which we'll define as having an engagement score of 1 or 2. The survey dataset doesn't have a column called disengaged, but we will create it.
+
+```{r}
+survey_disengaged <- survey %>% 
+  mutate(disengaged = ifelse(engagement <= 2, 1, 0)) 
+
+survey_disengaged
+
+survey_summary <- survey_disengaged %>% 
+  group_by(department) %>% 
+  summarize(pct_disengaged = mean(disengaged),
+            avg_salary = mean(salary),
+            avg_vacation_days = mean(vacation_days_taken))
+
+survey_summary
+
+```
+```{r}
+library(tidyr)
+survey_gathered <- survey_summary %>% 
+  gather(key = "measure", value = "value",
+         pct_disengaged, avg_salary, avg_vacation_days)
+
+# Create three bar charts
+ggplot(survey_gathered, aes(measure, value, fill = department)) +
+  geom_col(position = "dodge")
+```
+
+Two of the bar charts are very tiny.
+
+```{r}
+# Create three faceted bar charts
+ggplot(survey_gathered, aes(measure, value, fill=department))+ geom_col(position='dodge') + facet_wrap(facet= ~measure, scales="free") 
+```
+
+```{r}
+survey_disengaged <- survey %>% 
+  mutate(disengaged = ifelse(engagement <= 2, 1, 0))
+```
+
+Some inference we could draw from the graph: Sales department has the highest disengaged employees and it also has the least vacation days. We now need to check if the difference is statistically significant.
+
+
+
+We've seen some evidence that the sales department has a higher proportion of disengaged employees than the rest of the company, but we aren't yet certain if that difference is significant. We can test whether that difference is statistically significant using the chi-squared test. Chi-squared is used for categorical features. The t-test is used for continuous features.
+```{r}
+#Add the in_sales variable, which should be "Sales" for employees in the sales department, and "Other" otherwise. Assign the result to survey_sales.
+survey_sales <- survey_disengaged %>%
+  mutate(in_sales = ifelse(department=='Sales', "Sales", "Other"))
+
+#Use the chi-square the test to test the hypothesis that the sales department has the same proportion of disengaged employees as the rest of the company.
+chisq.test(survey_sales$in_sales, survey_sales$disengaged)
+
+# Is the result significant? Yes since the p-value is less than 0.05
+significant <- TRUE
+`````
+
+The other observation was that employees in the sales department take fewer vacation days on average than the rest of the company. We can test whether that observation is statistically significant as well.
+
+```{r}
+t.test(vacation_days_taken ~ in_sales, data = survey_sales)
+```
+
+Since the p is less than 0.05 then the test is statistically significant
+
+#Are new hires getting paid too much?
+
+When employers make a new hire, they must determine what the new employee will be paid. If the employer is not careful, the new hires can come in with a higher salary than the employees that currently work at the same job, which can cause employee turnover and dissatisfaction. In this chapter, you will check whether new hires are really getting paid more than current employees, and how to double-check your initial observations.
+
+```{r}
+# Import the data
+pay <- read_csv('fair_pay_data.csv')
+
+summary(pay)
+
+# Check average salary of new hires and non-new hires
+pay %>% 
+  group_by(new_hire) %>%
+    summarize(avg_salary = mean(salary))
+```
+
+It looks like new hires are being paid more than current employees. We will now check if the differnce is statistically significant.
+
+```{r}
+t.test(salary ~ new_hire, data = pay)
+
+# Do the same test, and tidy up the output  
+library(broom)
+t.test(salary ~ new_hire, data = pay) %>%
+  tidy()
+```
+
+From the p-value we can see that there is a significal difference in the salary. 
+
+```{r}
+# Create a stacked bar chart
+pay %>%
+  ggplot(aes(x=new_hire, fill=job_level)) + geom_bar()
+
+pay %>%
+  ggplot(aes(x=new_hire, fill=job_level)) + geom_bar(position='fill')
+
+```
+It looks like new hires are less likely to be hourly employees than current employees.
+
+ Do new hires have a higher average salary than current employees when job level is taken into account? Calculate the average salaries, and then recreate the bar chart from earlier in the chapter, adding faceting to split it up by the three job levels. Are the bar heights closer together than they were in the first plot?
+ 
+```{r}
+# Calculate the average salary for each group of interest
+pay_grouped <- pay %>% 
+  group_by(new_hire, job_level) %>% 
+  summarize(avg_salary = mean(salary))
+  
+# Graph the results using facet_wrap()  
+pay_grouped %>%
+  ggplot(aes(x=new_hire, y=avg_salary))+geom_col()+facet_wrap(facets=~job_level)
+```
+ In the plot you made, the bars were nearly equal. This supports the idea that an omitted variable - job level - is driving the difference in pay for new hires and current employees. However, the graph shows a small difference in the average salaries for hourly workers. Test whether a significant pay difference exists between hourly new hires and hourly current employees.
+ 
+```{r}
+pay_filter <- pay %>%
+  filter(job_level=='Hourly')
+
+t.test(salary ~ new_hire, data = pay_filter) %>%
+  tidy()
+```
+ The difference is not statistically significant
+ 
+```{r}
+# Run the simple regression
+model_simple <- lm(salary ~ new_hire, data = pay)
+
+# Display the summary of model_simple
+model_simple %>% 
+  summary()
+
+# Display a tidy summary
+model_simple %>% 
+  tidy()
+```
+ 
+```{r}
+
+```
+
